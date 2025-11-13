@@ -1,6 +1,7 @@
 import folium
 import matplotlib.pyplot as plt
 import numpy as np
+from click import style
 from shiny import App, ui, render
 
 from utils import get_latest_data, get_full_dataframe
@@ -14,6 +15,7 @@ df_daily = (
       })
       .sort_values("date")
 )
+df_latest = get_latest_data()
 
 
 #################### UI ####################
@@ -41,10 +43,12 @@ app_ui = ui.page_fluid(
             style="padding:20px; background:#f5f5f5; border-radius:8px;",
         ),
 
-        ui.card(
+        ui.div(
             ui.tags.h3("New Positive Cases (Map)"),
             ui.output_ui("covid_map"),
-            full_screen=True
+            full_screen=True,
+            height="1400px",
+            style="border: 1px solid red"
         ),
 
         ui.card(
@@ -54,7 +58,7 @@ app_ui = ui.page_fluid(
             full_screen=True
         ),
 
-        col_widths=(4, 4, 4)
+        col_widths=(3, 5, 3)
     )
 )
 
@@ -104,10 +108,24 @@ def server(input, output, session):
     @render.ui
     def covid_map():
         m = folium.Map(
-            location=[20, 0],
+            location=[30, 0],
             zoom_start=2,
-            tiles="CartoDB positron"
+            tiles="CartoDB positron",
         )
+
+        for _, row in df_latest.iterrows():
+            try:
+                folium.Circle(
+                    location=[row["latitude"], row["longitude"]],
+                    radius=row["daily_new_cases"] * 20,
+                    color="blue",
+                    fill=True,
+                    tooltip=f"Country: {row["country"]}\n Cases: {row['daily_new_cases']}",
+                    fill_opacity=0.5
+                ).add_to(m)
+            except Exception as e:
+                pass
+                # print(row["country"])
         return ui.HTML(m._repr_html_())
 
     # ---------- BAR CHART RIGHT ----------
@@ -115,8 +133,6 @@ def server(input, output, session):
     @output
     @render.plot
     def cases_plot():
-        df_latest = get_latest_data()
-
         data = (
             df_latest.sort_values("daily_new_cases", ascending=False)
             .head(20)
