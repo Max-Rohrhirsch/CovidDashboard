@@ -1,8 +1,8 @@
 import folium
-import matplotlib.pyplot as plt
-import numpy as np
-from click import style
+import pandas as pd
 from shiny import App, ui, render
+import plotly.express as px
+from shinywidgets import output_widget, render_widget
 
 from utils import get_latest_data, get_full_dataframe
 
@@ -37,28 +37,24 @@ app_ui = ui.page_fluid(
     # MAIN BODY
     ui.layout_columns(
         ui.div(
-            ui.output_plot("plot_top", height="300px"),
-            ui.output_plot("plot_bottom", height="300px"),
-
-            style="padding:20px; background:#f5f5f5; border-radius:8px;",
+            output_widget("plot_top"),
+            output_widget("plot_bottom"),
         ),
 
         ui.div(
             ui.tags.h3("New Positive Cases (Map)"),
             ui.output_ui("covid_map"),
             full_screen=True,
-            height="1400px",
-            style="border: 1px solid red"
         ),
 
         ui.card(
             ui.tags.h3("New Positive Cases (Top 20)"),
-            ui.output_plot("cases_plot", height="700px"),
+            output_widget("cases_plot", height="700px"),
 
-            full_screen=True
+            full_screen=True,
         ),
 
-        col_widths=(3, 5, 3)
+        col_widths=(3, 6, 3)
     )
 )
 
@@ -68,38 +64,36 @@ app_ui = ui.page_fluid(
 def server(input, output, session):
 
     # ----------- LEFT SIDE -----------
-    @output
-    @render.plot
+    # @output
+    @render_widget
     def plot_top():
-        fig, ax = plt.subplots(figsize=(7, 4))
-
-        ax.bar(
-            df_daily["date"],
-            df_daily["daily_new_cases"],
-            color="#00B4FF"
+        fig = px.bar(
+            df_daily,
+            x="date",
+            y="daily_new_cases",
+            title="Global New Positive Cases per Day",
+            labels={"daily_new_cases": "Cases", "date": "Date"},
+            color_discrete_sequence=["#00B4FF"]
         )
-
-        ax.set_title("Global New Positive Cases per Day")
-        ax.set_ylabel("Cases")
-        ax.set_xlabel("Date")
-        fig.autofmt_xdate()  # rotate dates cleanly
+        fig.update_layout(
+            margin=dict(l=20, r=20, t=40, b=30)
+        )
         return fig
 
-    @output
-    @render.plot
+    # @output
+    @render_widget
     def plot_bottom():
-        fig, ax = plt.subplots(figsize=(7, 4))
-
-        ax.bar(
-            df_daily["date"],
-            df_daily["daily_new_deaths"],
-            color="orange"
+        fig = px.bar(
+            df_daily,
+            x="date",
+            y="daily_new_deaths",
+            title="Global New Deaths per Day",
+            labels={"daily_new_deaths": "Deaths", "date": "Date"},
+            color_discrete_sequence=["orange"]
         )
-
-        ax.set_title("Global New Deaths per Day")
-        ax.set_ylabel("Deaths")
-        ax.set_xlabel("Date")
-        fig.autofmt_xdate()
+        fig.update_layout(
+            margin=dict(l=20, r=20, t=40, b=30)
+        )
         return fig
 
     # ---------- MAP (Folium) ----------
@@ -110,47 +104,66 @@ def server(input, output, session):
         m = folium.Map(
             location=[30, 0],
             zoom_start=2,
+            height="100%",
+            width="100%",
             tiles="CartoDB positron",
         )
 
         for _, row in df_latest.iterrows():
-            try:
-                folium.Circle(
-                    location=[row["latitude"], row["longitude"]],
-                    radius=row["daily_new_cases"] * 20,
-                    color="blue",
-                    fill=True,
-                    tooltip=f"Country: {row["country"]}\n Cases: {row['daily_new_cases']}",
-                    fill_opacity=0.5
-                ).add_to(m)
-            except Exception as e:
-                pass
-                # print(row["country"])
-        return ui.HTML(m._repr_html_())
+            if pd.isna(row["latitude"]) or pd.isna(row["longitude"]):
+                continue
+
+            html = f"""
+                <b>{row["country"]}</b> 
+                <br>
+                Comulated Cases: <b>{row['cumulative_total_cases']}</b><br>
+                Daily new Cases: <b>{row['daily_new_cases']}</b><br>
+                <br>
+                Comulated Deaths: <b>{row['cumulative_total_deaths']}</b><br>
+                Daily new Deaths: <b>{row['daily_new_deaths']}</b><br>
+                """
+
+            folium.Circle(
+                location=[row["latitude"], row["longitude"]],
+                radius=(int(row["daily_new_cases"]) ** 0.5) * 10000,
+                color="blue",
+                fill=True,
+                tooltip=html,
+                fill_opacity=0.5
+            ).add_to(m)
+        map_html = m._repr_html_()
+
+        map_html = map_html.replace("height:0;", "height:800px;")
+        map_html = map_html.replace("padding-bottom:60%;", "padding-bottom:0;")
+        return ui.HTML(f"<div style='height:900px; width:100%;'>{map_html}</div>")
 
     # ---------- BAR CHART RIGHT ----------
 
-    @output
-    @render.plot
+    @render_widget
     def cases_plot():
         data = (
             df_latest.sort_values("daily_new_cases", ascending=False)
             .head(20)
         )
 
-        fig, ax = plt.subplots(figsize=(5, 10))
-        ax.barh(
-            y=data["country"],
-            width=data["daily_new_cases"],
-            color="#00B4FF"
+        fig = px.bar(
+            data,
+            x="daily_new_cases",
+            y="country",
+            orientation="h",
+            title="Top 20 Countries by New Positive Cases",
+            labels={"daily_new_cases": "New Cases", "country": ""},
+            color_discrete_sequence=["#00B4FF"]
         )
 
-        ax.invert_yaxis()
-        ax.set_xlabel("New cases")
-        ax.set_ylabel("")
-        ax.set_title("Top 20 countries by new cases")
+        # Make the largest at top (Plotly draws bars from bottom by default)
+        fig.update_yaxes(autorange="reversed")
 
-        fig.tight_layout()
+        fig.update_layout(
+            height=700,
+            margin=dict(l=50, r=20, t=60, b=40)
+        )
+
         return fig
 
 
