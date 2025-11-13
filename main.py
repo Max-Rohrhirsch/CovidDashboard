@@ -3,6 +3,8 @@ import pandas as pd
 from shiny import App, ui, render, reactive
 import plotly.express as px
 from shinywidgets import output_widget, render_widget
+import plotly.graph_objects as go
+from plotly.callbacks import Points
 
 from utils import get_latest_data, get_full_dataframe
 
@@ -19,8 +21,6 @@ df_daily = (
         .dropna()
 )
 df_latest = get_latest_data()
-print(df_latest.head(10).to_string())
-print(df_latest.head(-10).to_string())
 
 #################### UI ####################
 app_ui = ui.page_fluid(
@@ -86,6 +86,38 @@ app_ui = ui.page_fluid(
 # ================== SERVER ==================
 
 def server(input, output, session):
+    # -------------- Country Filter ----------
+    selected_country = reactive.Value(None)
+
+    @reactive.Effect
+    @reactive.event(input.cases_plot_click)
+    def _on_cases_bar_click():
+        evt = input.cases_plot_click()
+        if evt is None:
+            return
+
+        # evt["points"] is a list of clicked points
+        point = evt["points"][0]
+
+        # Your bar plot uses y="country"
+        country = point["y"]
+        print(country)
+        selected_country.set(country)
+
+    @reactive.Calc
+    def filtered_latest():
+        c = selected_country()
+        if c is None:
+            return df_latest
+        return df_latest[df_latest["country"] == c]
+
+    @reactive.Calc
+    def filtered_daily():
+        c = selected_country()
+        if c is None:
+            return df_daily
+        return df[df["country"] == c].sort_values("date")
+
     # ----------- Filters -----------
     @reactive.Calc
     def metric_column():
@@ -106,7 +138,7 @@ def server(input, output, session):
     def plot_top():
         col = metric_column()
         fig = px.bar(
-            df_daily,
+            filtered_daily(),
             x="date",
             y=col,
             title=f"Global {input.metric_type().capitalize()} {input.measure().capitalize()} per Day",
@@ -122,7 +154,7 @@ def server(input, output, session):
     def plot_bottom():
         col = metric_column()
         fig = px.bar(
-            df_daily,
+            filtered_daily(),
             x="date",
             y=col,
             title=f"{input.metric_type().capitalize()} {input.measure().capitalize()} Over Time",
@@ -177,12 +209,13 @@ def server(input, output, session):
                 color="blue",
                 fill=True,
                 tooltip=html,
-                fill_opacity=0.5
+                fill_opacity=0.5,
             ).add_to(m)
         map_html = m._repr_html_()
 
         map_html = map_html.replace("height:0;", "height:800px;")
         map_html = map_html.replace("padding-bottom:60%;", "padding-bottom:0;")
+
         return ui.HTML(f"<div style='height:900px; width:100%;'>{map_html}</div>")
 
     # ---------- BAR CHART RIGHT ----------
@@ -208,7 +241,26 @@ def server(input, output, session):
 
         fig.update_yaxes(autorange="reversed")
         fig.update_layout(height=700, margin=dict(l=50, r=20, t=60, b=40))
-        return fig
+
+        # --- On Click
+        w = go.FigureWidget(fig.data, fig.layout)
+
+        def on_bar_click(trace, points: Points, state):
+            # points.point_inds = indices of clicked bars
+            if not points.point_inds:
+                return
+            idx = points.point_inds[0]
+
+            # y-axis contains country names (orientation='h')
+            country = trace.y[idx]
+            print("Clicked country:", country)
+            selected_country.set(country)
+
+        # Attach click handler to first trace (your single bar series)
+        w.data[0].on_click(on_bar_click)
+
+
+        return w
 
 
 if __name__ == "__main__":
