@@ -1,6 +1,6 @@
 import folium
 import pandas as pd
-from shiny import App, ui, render
+from shiny import App, ui, render, reactive
 import plotly.express as px
 from shinywidgets import output_widget, render_widget
 
@@ -9,14 +9,18 @@ from utils import get_latest_data, get_full_dataframe
 df = get_full_dataframe()
 df_daily = (
     df.groupby("date", as_index=False)
-      .agg({
+        .agg({
           "daily_new_cases": "sum",
-          "daily_new_deaths": "sum"
-      })
-      .sort_values("date")
+          "daily_new_deaths": "sum",
+          "cumulative_total_cases": "sum",
+          "cumulative_total_deaths": "sum",
+        })
+        .sort_values("date")
+        .dropna()
 )
 df_latest = get_latest_data()
-
+print(df_latest.head(10).to_string())
+print(df_latest.head(-10).to_string())
 
 #################### UI ####################
 app_ui = ui.page_fluid(
@@ -42,6 +46,26 @@ app_ui = ui.page_fluid(
         ),
 
         ui.div(
+            ui.row(
+                ui.column(
+                    6,
+                    ui.input_select(
+                        "metric_type",
+                        "Metric type",
+                        {"new": "New", "cumulative": "Cumulative"},
+                        selected="new"
+                    ),
+                ),
+                ui.column(
+                    6,
+                    ui.input_select(
+                        "measure",
+                        "Measure",
+                        {"cases": "Cases", "deaths": "Deaths"},
+                        selected="cases"
+                    ),
+                ),
+            ),
             ui.tags.h3("New Positive Cases (Map)"),
             ui.output_ui("covid_map"),
             full_screen=True,
@@ -62,17 +86,31 @@ app_ui = ui.page_fluid(
 # ================== SERVER ==================
 
 def server(input, output, session):
+    # ----------- Filters -----------
+    @reactive.Calc
+    def metric_column():
+        metric_type = input.metric_type()
+        measure = input.measure()
+
+        if metric_type == "new" and measure == "cases":
+            return "daily_new_cases"
+        if metric_type == "new" and measure == "deaths":
+            return "daily_new_deaths"
+        if metric_type == "cumulative" and measure == "cases":
+            return "cumulative_total_cases"
+        if metric_type == "cumulative" and measure == "deaths":
+            return "cumulative_total_deaths"
 
     # ----------- LEFT SIDE -----------
-    # @output
     @render_widget
     def plot_top():
+        col = metric_column()
         fig = px.bar(
             df_daily,
             x="date",
-            y="daily_new_cases",
-            title="Global New Positive Cases per Day",
-            labels={"daily_new_cases": "Cases", "date": "Date"},
+            y=col,
+            title=f"Global {input.metric_type().capitalize()} {input.measure().capitalize()} per Day",
+            labels={col: input.measure().capitalize(), "date": "Date"},
             color_discrete_sequence=["#00B4FF"]
         )
         fig.update_layout(
@@ -80,15 +118,15 @@ def server(input, output, session):
         )
         return fig
 
-    # @output
     @render_widget
     def plot_bottom():
+        col = metric_column()
         fig = px.bar(
             df_daily,
             x="date",
-            y="daily_new_deaths",
-            title="Global New Deaths per Day",
-            labels={"daily_new_deaths": "Deaths", "date": "Date"},
+            y=col,
+            title=f"{input.metric_type().capitalize()} {input.measure().capitalize()} Over Time",
+            labels={col: input.measure().capitalize(), "date": "Date"},
             color_discrete_sequence=["orange"]
         )
         fig.update_layout(
@@ -96,7 +134,7 @@ def server(input, output, session):
         )
         return fig
 
-    # ---------- MAP (Folium) ----------
+    # ---------- MAP ----------
 
     @output
     @render.ui
@@ -113,6 +151,16 @@ def server(input, output, session):
             if pd.isna(row["latitude"]) or pd.isna(row["longitude"]):
                 continue
 
+
+            value = row[metric_column()]
+
+            if pd.isna(value):
+                continue
+
+            radius = (int(value) ** 0.5) * 10000
+            if "cumulative" in metric_column():
+                radius /= 50
+
             html = f"""
                 <b>{row["country"]}</b> 
                 <br>
@@ -125,7 +173,7 @@ def server(input, output, session):
 
             folium.Circle(
                 location=[row["latitude"], row["longitude"]],
-                radius=(int(row["daily_new_cases"]) ** 0.5) * 10000,
+                radius=radius,
                 color="blue",
                 fill=True,
                 tooltip=html,
@@ -141,32 +189,29 @@ def server(input, output, session):
 
     @render_widget
     def cases_plot():
+        col = metric_column()
+
         data = (
-            df_latest.sort_values("daily_new_cases", ascending=False)
+            df_latest.sort_values(col, ascending=False)
             .head(20)
         )
 
         fig = px.bar(
             data,
-            x="daily_new_cases",
+            x=col,
             y="country",
             orientation="h",
-            title="Top 20 Countries by New Positive Cases",
-            labels={"daily_new_cases": "New Cases", "country": ""},
+            title=f"Top 20 Countries by {input.metric_type().capitalize()} {input.measure().capitalize()}",
+            labels={col: input.measure().capitalize(), "country": ""},
             color_discrete_sequence=["#00B4FF"]
         )
 
-        # Make the largest at top (Plotly draws bars from bottom by default)
         fig.update_yaxes(autorange="reversed")
-
-        fig.update_layout(
-            height=700,
-            margin=dict(l=50, r=20, t=60, b=40)
-        )
-
+        fig.update_layout(height=700, margin=dict(l=50, r=20, t=60, b=40))
         return fig
 
 
 if __name__ == "__main__":
     app = App(app_ui, server)
     app.run()
+
