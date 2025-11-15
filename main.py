@@ -1,13 +1,14 @@
-import folium
-import pandas as pd
-from shiny import App, ui, render, reactive
+from shiny import App, ui, reactive
 import plotly.express as px
+import pandas as pd
 from shinywidgets import output_widget, render_widget
 import plotly.graph_objects as go
 from plotly.callbacks import Points
 
 from utils import get_latest_data, get_full_dataframe
 
+
+#################### Change Data ####################
 df = get_full_dataframe()
 df_daily = (
     df.groupby("date", as_index=False)
@@ -22,8 +23,10 @@ df_daily = (
 )
 df_latest = get_latest_data()
 
+
 #################### UI ####################
 app_ui = ui.page_fluid(
+
     # HEADER
     ui.tags.div(
         "Global COVID-19 Dashboard",
@@ -66,14 +69,16 @@ app_ui = ui.page_fluid(
                     ),
                 ),
             ),
-            ui.tags.h3("New Positive Cases (Map)"),
-            ui.output_ui("covid_map"),
+
+            # MAP
+            output_widget("covid_map"),
             full_screen=True,
         ),
 
-        ui.card(
+        # Right Chart
+        ui.div(
             ui.tags.h3("New Positive Cases (Top 20)"),
-            output_widget("cases_plot", height="700px"),
+            output_widget("cases_plot"),
 
             full_screen=True,
         ),
@@ -83,33 +88,12 @@ app_ui = ui.page_fluid(
 )
 
 
-# ================== SERVER ==================
+#################### SERVER ####################
 
 def server(input, output, session):
+
     # -------------- Country Filter ----------
     selected_country = reactive.Value(None)
-
-    @reactive.Effect
-    @reactive.event(input.cases_plot_click)
-    def _on_cases_bar_click():
-        evt = input.cases_plot_click()
-        if evt is None:
-            return
-
-        # evt["points"] is a list of clicked points
-        point = evt["points"][0]
-
-        # Your bar plot uses y="country"
-        country = point["y"]
-        print(country)
-        selected_country.set(country)
-
-    @reactive.Calc
-    def filtered_latest():
-        c = selected_country()
-        if c is None:
-            return df_latest
-        return df_latest[df_latest["country"] == c]
 
     @reactive.Calc
     def filtered_daily():
@@ -148,6 +132,7 @@ def server(input, output, session):
         fig.update_layout(
             margin=dict(l=20, r=20, t=40, b=30)
         )
+        # fig.update_xaxes(type="date", tickformat="%Y-%m-%d", tickangle=-45)
         return fig
 
     @render_widget
@@ -164,59 +149,87 @@ def server(input, output, session):
         fig.update_layout(
             margin=dict(l=20, r=20, t=40, b=30)
         )
+        # fig.update_xaxes(type="date", tickformat="%Y-%m-%d", tickangle=-45)
         return fig
 
     # ---------- MAP ----------
 
-    @output
-    @render.ui
+    @render_widget
     def covid_map():
-        m = folium.Map(
-            location=[30, 0],
-            zoom_start=2,
-            height="100%",
-            width="100%",
-            tiles="CartoDB positron",
+        col = metric_column()
+        data = df_latest.copy()
+
+        # Size of dots
+        values = data[col].fillna(0).clip(lower=0)
+        size = (values ** 0.5) / 5
+        if "cumulative" in col:
+            size = size / 30
+        if "deaths" in col:
+            size = size * 30
+
+        # Hover-Text
+        cum_cases = data["cumulative_total_cases"].fillna(0).round().astype("int64").astype(str)
+        daily_cases = data["daily_new_cases"].fillna(0).round().astype("int64").astype(str)
+        cum_deaths = data["cumulative_total_deaths"].fillna(0).round().astype("int64").astype(str)
+        daily_deaths = data["daily_new_deaths"].fillna(0).round().astype("int64").astype(str)
+
+        hover_text = (
+                "<b>" + data["country"] + "</b><br>"
+                "Cumulative Cases: <b>" + cum_cases + "</b><br>"
+                "Daily New Cases: <b>" + daily_cases + "</b><br><br>"
+                "Cumulative Deaths: <b>" + cum_deaths + "</b><br>"
+                "Daily New Deaths: <b>" + daily_deaths + "</b>"
         )
 
-        for _, row in df_latest.iterrows():
-            if pd.isna(row["latitude"]) or pd.isna(row["longitude"]):
-                continue
+        fig = go.FigureWidget(
+            data=[
+                go.Scattergeo(
+                    lat=data["latitude"],
+                    lon=data["longitude"],
+                    text=data["country"],
+                    customdata=data["country"],
+                    mode="markers",
+                    hovertext=hover_text,
+                    hoverinfo="text",
+                    marker=dict(
+                        size=size,
+                        color="red",
+                        opacity=0.5,
+                    ),
+                )
+            ]
+        )
 
+        # MAP
+        fig.update_geos(
+            projection_type="natural earth",
+            showcountries=True,
+            countrycolor="black",
+            showcoastlines=True,
+            coastlinecolor="black",
+            showland=True,
+            landcolor="#f0f0f0",
+            # fitbounds="locations",
+        )
 
-            value = row[metric_column()]
+        fig.update_layout(
+            width=900,
+            height=700,
+            title=f"{input.metric_type().capitalize()} {input.measure().capitalize()} by Country",
+        )
 
-            if pd.isna(value):
-                continue
+        # Click Event
+        def on_point_click(trace, points: Points, state):
+            if not points.point_inds:
+                return
+            idx = points.point_inds[0]
+            country = trace.customdata[idx]
+            print("Clicked on map:", country)
+            selected_country.set(country)
 
-            radius = (int(value) ** 0.5) * 10000
-            if "cumulative" in metric_column():
-                radius /= 50
+        fig.data[0].on_click(on_point_click)
 
-            html = f"""
-                <b>{row["country"]}</b> 
-                <br>
-                Comulated Cases: <b>{row['cumulative_total_cases']}</b><br>
-                Daily new Cases: <b>{row['daily_new_cases']}</b><br>
-                <br>
-                Comulated Deaths: <b>{row['cumulative_total_deaths']}</b><br>
-                Daily new Deaths: <b>{row['daily_new_deaths']}</b><br>
-                """
-
-            folium.Circle(
-                location=[row["latitude"], row["longitude"]],
-                radius=radius,
-                color="blue",
-                fill=True,
-                tooltip=html,
-                fill_opacity=0.5,
-            ).add_to(m)
-        map_html = m._repr_html_()
-
-        map_html = map_html.replace("height:0;", "height:800px;")
-        map_html = map_html.replace("padding-bottom:60%;", "padding-bottom:0;")
-
-        return ui.HTML(f"<div style='height:900px; width:100%;'>{map_html}</div>")
+        return fig
 
     # ---------- BAR CHART RIGHT ----------
 
@@ -240,25 +253,22 @@ def server(input, output, session):
         )
 
         fig.update_yaxes(autorange="reversed")
-        fig.update_layout(height=700, margin=dict(l=50, r=20, t=60, b=40))
+        fig.update_layout(margin=dict(l=50, r=20, t=60, b=40))
 
-        # --- On Click
+        # On Click
         w = go.FigureWidget(fig.data, fig.layout)
 
         def on_bar_click(trace, points: Points, state):
-            # points.point_inds = indices of clicked bars
             if not points.point_inds:
                 return
             idx = points.point_inds[0]
 
-            # y-axis contains country names (orientation='h')
             country = trace.y[idx]
             print("Clicked country:", country)
             selected_country.set(country)
 
-        # Attach click handler to first trace (your single bar series)
+        # Attach click handler to first trace
         w.data[0].on_click(on_bar_click)
-
 
         return w
 

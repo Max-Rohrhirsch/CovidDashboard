@@ -1,7 +1,5 @@
 shiny~=1.5.0
-folium~=0.20.0
 pandas~=2.3.3
 numpy~=2.3.4
-matplotlib~=3.10.7
 shinywidgets~=0.7.0
 plotly~=6.4.0

@@ -69,6 +69,7 @@ def get_full_dataframe() -> DataFrame:
 
     return df
 
+
 def normalize_country_csv(file_name: str, columnName: str):
     df = pd.read_csv(file_name)
 
