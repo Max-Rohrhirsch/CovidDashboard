@@ -260,7 +260,9 @@ def server(input, output, session):
             orientation="h",
             title=f"Top 20 Countries by {input.metric_type().capitalize()} {input.measure().capitalize()}",
             labels={col: input.measure().capitalize(), "country": ""},
-            color_discrete_sequence=["#00B4FF"]
+            color_discrete_sequence=["#00B4FF"],
+            height=800,
+            width=500
         )
 
         fig.update_yaxes(autorange="reversed")
