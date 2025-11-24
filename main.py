@@ -10,6 +10,7 @@ from utils import get_latest_data, get_full_dataframe
 
 #################### Change Data ####################
 df = get_full_dataframe()
+# df["date"] = pd.to_datetime(df["date"])
 df_daily = (
     df.groupby("date", as_index=False)
         .agg({
@@ -121,8 +122,12 @@ def server(input, output, session):
     @render_widget
     def plot_top():
         col = metric_column()
+
+        d = filtered_daily().copy()
+        d["date"] = pd.to_datetime(d["date"])
+
         fig = px.bar(
-            filtered_daily(),
+            d,
             x="date",
             y=col,
             title=f"Global {input.metric_type().capitalize()} {input.measure().capitalize()} per Day",
@@ -138,8 +143,14 @@ def server(input, output, session):
     @render_widget
     def plot_bottom():
         col = metric_column()
+
+        d = filtered_daily().copy()
+        d["date"] = pd.to_datetime(d["date"])
+        print(d.head(20))
+        print(d.info())
+
         fig = px.bar(
-            filtered_daily(),
+            d,
             x="date",
             y=col,
             title=f"{input.metric_type().capitalize()} {input.measure().capitalize()} Over Time",
