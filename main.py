@@ -10,7 +10,6 @@ from utils import get_latest_data, get_full_dataframe
 
 #################### Change Data ####################
 df = get_full_dataframe()
-# df["date"] = pd.to_datetime(df["date"])
 df_daily = (
     df.groupby("date", as_index=False)
         .agg({
@@ -123,9 +122,8 @@ def server(input, output, session):
     def plot_top():
         col = metric_column()
 
-        d = filtered_daily().copy()
-        d["date"] = pd.to_datetime(d["date"])
-
+        d = filtered_daily()
+    
         fig = px.bar(
             d,
             x="date",
@@ -137,17 +135,14 @@ def server(input, output, session):
         fig.update_layout(
             margin=dict(l=20, r=20, t=40, b=30)
         )
-        # fig.update_xaxes(type="date", tickformat="%Y-%m-%d", tickangle=-45)
+        fig.update_xaxes(type="date", tickformat="%Y-%m-%d", tickangle=-45)
+        
         return fig
 
     @render_widget
     def plot_bottom():
         col = metric_column()
-
-        d = filtered_daily().copy()
-        d["date"] = pd.to_datetime(d["date"])
-        print(d.head(20))
-        print(d.info())
+        d = filtered_daily()
 
         fig = px.bar(
             d,
@@ -160,7 +155,7 @@ def server(input, output, session):
         fig.update_layout(
             margin=dict(l=20, r=20, t=40, b=30)
         )
-        # fig.update_xaxes(type="date", tickformat="%Y-%m-%d", tickangle=-45)
+        fig.update_xaxes(type="date", tickformat="%Y-%m", tickangle=-45)
         return fig
 
     # ---------- MAP ----------
@@ -262,7 +257,7 @@ def server(input, output, session):
             labels={col: input.measure().capitalize(), "country": ""},
             color_discrete_sequence=["#00B4FF"],
             height=800,
-            width=500
+            width=450
         )
 
         fig.update_yaxes(autorange="reversed")

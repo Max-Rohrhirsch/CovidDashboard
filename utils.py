@@ -49,7 +49,7 @@ def get_latest_data():
 
 def get_full_dataframe() -> DataFrame:
     df = pd.read_csv("file.csv")
-    df["date"] = pd.to_datetime(df["date"])
+    # df["date"] = pd.to_datetime(df["date"])
 
     # Calculate daily cases
     df["daily_new_cases"] = (
