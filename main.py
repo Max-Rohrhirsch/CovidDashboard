@@ -1,6 +1,5 @@
 from shiny import App, ui, reactive
 import plotly.express as px
-import pandas as pd
 from shinywidgets import output_widget, render_widget
 import plotly.graph_objects as go
 from plotly.callbacks import Points
@@ -167,11 +166,10 @@ def server(input, output, session):
 
         # Size of dots
         values = data[col].fillna(0).clip(lower=0)
-        size = (values ** 0.5) / 5
-        if "cumulative" in col:
-            size = size / 30
-        if "deaths" in col:
-            size = size * 30
+        values_scaled = values ** 0.5
+        MAX_SIZE = 60
+        sizeref = values_scaled.max() / MAX_SIZE ** 2
+        size = values_scaled
 
         # Hover-Text
         cum_cases = data["cumulative_total_cases"].fillna(0).round().astype("int64").astype(str)
@@ -190,8 +188,8 @@ def server(input, output, session):
         fig = go.FigureWidget(
             data=[
                 go.Scattergeo(
-                    lat=data["latitude"],
-                    lon=data["longitude"],
+                    locations=data["country"],
+                    locationmode="country names",
                     text=data["country"],
                     customdata=data["country"],
                     mode="markers",
@@ -199,9 +197,12 @@ def server(input, output, session):
                     hoverinfo="text",
                     marker=dict(
                         size=size,
+                        sizemode="area",
+                        sizeref=sizeref,
+                        # sizemin=4,  # min size of dots
                         color="red",
                         opacity=0.5,
-                    ),
+                    )
                 )
             ]
         )

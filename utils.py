@@ -30,19 +30,10 @@ def get_dataframe() -> dict[Hashable, DataFrame]:
 def get_latest_data():
     df = get_full_dataframe()
 
-    coords = pd.read_csv("countriLoc.csv")
-
     df_latest = (
         df.sort_values("date")
           .groupby("country", as_index=False)
           .tail(1)
-    )
-
-    df_latest = df_latest.merge(
-        coords[["name", "latitude", "longitude"]],
-        left_on="country",
-        right_on="name",
-        how="left"
     )
     return df_latest
 
@@ -70,12 +61,10 @@ def get_full_dataframe() -> DataFrame:
     return df
 
 
-def normalize_country_csv(file_name: str, columnName: str):
-    df = pd.read_csv(file_name)
-
-    df[columnName] = df[columnName].str.lower()
-
-    df.to_csv(file_name, index=False)
-
-# normalize_country_csv("countriLoc.csv", "name")
+# def normalize_country_csv(file_name: str, columnName: str):
+#     df = pd.read_csv(file_name)
+#
+#     df[columnName] = df[columnName].str.lower()
+#
+#     df.to_csv(file_name, index=False)
 # normalize_country_csv("file.csv", "country")
